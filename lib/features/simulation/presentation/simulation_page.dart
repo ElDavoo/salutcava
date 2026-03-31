@@ -90,7 +90,6 @@ class _SimulationPageState extends State<SimulationPage> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final arenaHeight = max(320.0, constraints.maxHeight * 0.58);
-            final messageHeight = max(100.0, constraints.maxHeight * 0.16);
 
             return SingleChildScrollView(
               child: Padding(
@@ -162,11 +161,6 @@ class _SimulationPageState extends State<SimulationPage> {
                     ),
                     const SizedBox(height: 10),
                     _buildMetrics(theme, snapshot, strings),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: messageHeight,
-                      child: _buildLastMessage(theme, snapshot, strings),
-                    ),
                     if (snapshot.isComplete) ...[
                       const SizedBox(height: 10),
                       _buildCompletionBanner(theme, snapshot, strings),
@@ -290,62 +284,13 @@ class _SimulationPageState extends State<SimulationPage> {
               strings.elapsedLabel(elapsed),
               style: theme.textTheme.titleSmall,
             ),
-            Text(
-              snapshot.isComplete
-                  ? strings.statusCompleteLabel
-                  : strings.nextLabel(
-                      _exchangeLabel(strings, snapshot.nextBatchType),
-                    ),
-              style: theme.textTheme.titleSmall,
-            ),
+            if (snapshot.isComplete)
+              Text(
+                strings.statusCompleteLabel,
+                style: theme.textTheme.titleSmall,
+              ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildLastMessage(
-    ThemeData theme,
-    SimulationSnapshot snapshot,
-    AppLocalizations strings,
-  ) {
-    final lastStep = snapshot.lastBatch;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: lastStep == null
-            ? Center(
-                child: Text(
-                  strings.noMessageYet,
-                  style: theme.textTheme.bodyMedium,
-                ),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    strings.lastMessageHeader(
-                      _exchangeLabel(strings, lastStep.type),
-                      lastStep.pairs.length,
-                    ),
-                    style: theme.textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 6),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: lastStep.turns.length,
-                      itemBuilder: (context, index) {
-                        final turn = lastStep.turns[index];
-                        return Text(
-                          'P${turn.from + 1} -> P${turn.to + 1}: ${turn.text}',
-                          style: theme.textTheme.bodySmall,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
       ),
     );
   }
@@ -384,15 +329,6 @@ class _SimulationPageState extends State<SimulationPage> {
         .toString()
         .padLeft(2, '0');
     return '$minutes:$seconds.$centiseconds';
-  }
-
-  String _exchangeLabel(AppLocalizations strings, BatchType type) {
-    switch (type) {
-      case BatchType.step1:
-        return strings.exchangeSalut;
-      case BatchType.step2:
-        return strings.exchangeCaVa;
-    }
   }
 
   String _schedulerModeLabel(AppLocalizations strings, SchedulerMode mode) {

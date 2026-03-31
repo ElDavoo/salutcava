@@ -62,6 +62,7 @@
   },
   "exchangeSalut": "Salut",
   "exchangeCaVa": "Ça va",
+  "exchangeMixed": "Mixte",
   "noMessageYet": "Aucun message. Touchez la zone pour commencer.",
   "lastMessageHeader": "{exchange} ({pairCount, plural, =1{# conversation} other{# conversations}})",
   "@lastMessageHeader": {

@@ -44,9 +44,8 @@ class SimulationController {
   late Map<PairId, PairProgress> _pairStates;
   final List<BatchExecution> _history = <BatchExecution>[];
   final Map<PairId, bool> _preferContinueStep2 = <PairId, bool>{};
-  BatchType? _activeBatchType;
-  List<PairId> _activeBatchPairs = const <PairId>[];
-  int _activeMessageIndex = 0;
+  final List<_ActiveConversation> _activeConversations =
+      <_ActiveConversation>[];
   int _totalTurns = 0;
   DateTime? _startedAt;
   DateTime? _finishedAt;
@@ -78,43 +77,58 @@ class SimulationController {
     }
 
     _startedAt ??= _clock();
+    final selectedCandidates = _selectCandidatesForSlots(
+      _buildWaveCandidates(),
+      _config.maxConcurrent,
+    );
 
-    if (_activeBatchType == null || _activeBatchPairs.isEmpty) {
-      final nextBatch = _selectNextBatch();
-      if (nextBatch == null) {
-        _finishedAt = _clock();
-        _snapshot = _buildSnapshot();
-        return null;
-      }
-
-      _activeBatchType = nextBatch.type;
-      _activeBatchPairs = nextBatch.pairs;
-      _activeMessageIndex = 0;
+    if (selectedCandidates.isEmpty) {
+      _finishedAt = _clock();
+      _snapshot = _buildSnapshot();
+      return null;
     }
 
-    final activeBatchType = _activeBatchType!;
-    final turns = _activeBatchPairs
-        .map((pair) => _turnForPair(pair, activeBatchType, _activeMessageIndex))
-        .toList(growable: false);
+    final turns = <MessageTurn>[];
+    final pairs = <PairId>[];
+    final phases = <BatchType>{};
+    final completed = <_ActiveConversation>[];
+
+    for (final candidate in selectedCandidates) {
+      final conversation =
+          candidate.conversation ??
+          _startConversation(candidate.pair, candidate.phase);
+
+      final turn = _turnForPair(
+        conversation.pair,
+        conversation.phase,
+        conversation.nextMessageIndex,
+      );
+      turns.add(turn);
+      pairs.add(conversation.pair);
+      phases.add(conversation.phase);
+
+      conversation.nextMessageIndex++;
+      if (conversation.nextMessageIndex >= _turnCountFor(conversation.phase)) {
+        completed.add(conversation);
+      }
+    }
+
+    for (final conversation in completed) {
+      _completeConversation(conversation);
+      _activeConversations.remove(conversation);
+    }
 
     _totalTurns += turns.length;
     final execution = BatchExecution(
-      type: activeBatchType,
-      pairs: _activeBatchPairs,
+      type: _executionTypeFor(phases),
+      pairs: pairs,
       turns: turns,
     );
     _history.add(execution);
 
-    _activeMessageIndex++;
-    if (_activeMessageIndex >= _turnCountFor(activeBatchType)) {
-      _completeActiveBatch(activeBatchType, _activeBatchPairs);
-      _activeBatchType = null;
-      _activeBatchPairs = const <PairId>[];
-      _activeMessageIndex = 0;
-
-      if (_pairStates.values.every((state) => state == PairProgress.complete)) {
-        _finishedAt = _clock();
-      }
+    if (_activeConversations.isEmpty &&
+        _pairStates.values.every((state) => state == PairProgress.complete)) {
+      _finishedAt = _clock();
     }
 
     _snapshot = _buildSnapshot(lastBatch: execution);
@@ -129,9 +143,7 @@ class SimulationController {
     };
     _history.clear();
     _preferContinueStep2.clear();
-    _activeBatchType = null;
-    _activeBatchPairs = const <PairId>[];
-    _activeMessageIndex = 0;
+    _activeConversations.clear();
     _totalTurns = 0;
     _startedAt = null;
     _finishedAt = null;
@@ -139,7 +151,11 @@ class SimulationController {
   }
 
   SimulationSnapshot _buildSnapshot({BatchExecution? lastBatch}) {
-    final displayBatchType = _activeBatchType ?? _predictNextBatchType();
+    final displayBatchType = _activeConversations.isNotEmpty
+        ? _executionTypeFor(
+            _activeConversations.map((conv) => conv.phase).toSet(),
+          )
+        : _predictNextBatchType();
     final elapsed = _startedAt == null
         ? null
         : (_finishedAt ?? _clock()).difference(_startedAt!);
@@ -158,63 +174,267 @@ class SimulationController {
     );
   }
 
-  _BatchSelection? _selectNextBatch() {
-    final continueStep2Pairs = _eligibleContinueStep2Pairs();
-    if (continueStep2Pairs.isNotEmpty) {
-      return _buildSelection(BatchType.step2, continueStep2Pairs);
+  List<_ConversationCandidate> _buildWaveCandidates() {
+    final candidates = <_ConversationCandidate>[];
+
+    final orderedOngoing = _orderPairs(
+      _activeConversations.map((conversation) => conversation.pair).toList(),
+    );
+    final ongoingByPair = <PairId, _ActiveConversation>{
+      for (final conversation in _activeConversations)
+        conversation.pair: conversation,
+    };
+    for (final pair in orderedOngoing) {
+      final conversation = ongoingByPair[pair]!;
+      candidates.add(
+        _ConversationCandidate(
+          pair: pair,
+          phase: conversation.phase,
+          priority: 5,
+          rank: candidates.length,
+          conversation: conversation,
+        ),
+      );
     }
 
-    final step1Pairs = _eligibleStep1Pairs();
-    if (step1Pairs.isNotEmpty) {
-      return _buildSelection(BatchType.step1, step1Pairs);
+    void addCandidateGroup({
+      required List<PairId> pairs,
+      required BatchType phase,
+      required int priority,
+    }) {
+      final filtered = pairs
+          .where((pair) => !_isPairActive(pair))
+          .toList(growable: false);
+
+      final ordered = _orderPairs(filtered);
+      for (final pair in ordered) {
+        candidates.add(
+          _ConversationCandidate(
+            pair: pair,
+            phase: phase,
+            priority: priority,
+            rank: candidates.length,
+          ),
+        );
+      }
     }
 
-    final delayedStep2Pairs = _eligibleWaitingStep2Pairs();
-    if (delayedStep2Pairs.isNotEmpty) {
-      return _buildSelection(BatchType.step2, delayedStep2Pairs);
-    }
+    addCandidateGroup(
+      pairs: _eligibleContinueStep2Pairs(),
+      phase: BatchType.step2,
+      priority: 4,
+    );
+    addCandidateGroup(
+      pairs: _eligibleStep1Pairs(),
+      phase: BatchType.step1,
+      priority: 6,
+    );
+    addCandidateGroup(
+      pairs: _eligibleWaitingStep2Pairs(),
+      phase: BatchType.step2,
+      priority: 3,
+    );
 
-    return null;
+    return candidates;
   }
 
-  _BatchSelection _buildSelection(BatchType type, List<PairId> candidates) {
-    final selected = _scheduler.selectPairs(
-      candidates: candidates,
-      maxConcurrent: _config.maxConcurrent,
+  _ActiveConversation _startConversation(PairId pair, BatchType phase) {
+    final conversation = _ActiveConversation(pair: pair, phase: phase);
+    _activeConversations.add(conversation);
+    return conversation;
+  }
+
+  List<PairId> _orderPairs(List<PairId> pairs) {
+    if (pairs.length <= 1) {
+      return pairs;
+    }
+
+    final remaining = List<PairId>.from(pairs);
+    final ordered = <PairId>[];
+
+    while (remaining.isNotEmpty) {
+      final picked = _scheduler.selectPairs(
+        candidates: remaining,
+        maxConcurrent: 1,
+      );
+      if (picked.isEmpty) {
+        ordered.addAll(remaining);
+        break;
+      }
+      final pair = picked.first;
+      ordered.add(pair);
+      remaining.remove(pair);
+    }
+
+    return ordered;
+  }
+
+  List<_ConversationCandidate> _selectCandidatesForSlots(
+    List<_ConversationCandidate> candidates,
+    int remainingSlots,
+  ) {
+    if (remainingSlots <= 0 || candidates.isEmpty) {
+      return const <_ConversationCandidate>[];
+    }
+
+    final people = <int>{
+      for (final candidate in candidates) ...[
+        candidate.pair.first,
+        candidate.pair.second,
+      ],
+    };
+    if (people.length < 2) {
+      return const <_ConversationCandidate>[];
+    }
+
+    final peopleList = people.toList()..sort();
+    final localIndex = <int, int>{
+      for (var i = 0; i < peopleList.length; i++) peopleList[i]: i,
+    };
+
+    final edgesByPerson = List<List<_CandidateEdge>>.generate(
+      peopleList.length,
+      (_) => <_CandidateEdge>[],
     );
-    final pairsToRun = selected.isEmpty ? <PairId>[candidates.first] : selected;
-    return _BatchSelection(
-      type: type,
-      pairs: List<PairId>.unmodifiable(pairsToRun),
+
+    for (final candidate in candidates) {
+      var left = localIndex[candidate.pair.first]!;
+      var right = localIndex[candidate.pair.second]!;
+      if (left > right) {
+        final temp = left;
+        left = right;
+        right = temp;
+      }
+      edgesByPerson[left].add(
+        _CandidateEdge(otherPersonIndex: right, candidate: candidate),
+      );
+    }
+
+    final fullMask = (1 << peopleList.length) - 1;
+    final memo = <int, _CandidateSelection>{};
+
+    _CandidateSelection search(int mask, int slots) {
+      if (slots == 0 || !_hasAtLeastTwoBits(mask)) {
+        return const _CandidateSelection.empty();
+      }
+
+      final key = (mask << 3) | slots;
+      final cached = memo[key];
+      if (cached != null) {
+        return cached;
+      }
+
+      final person = _lowestSetBitIndex(mask);
+      final maskWithoutPerson = mask & ~(1 << person);
+
+      var best = search(maskWithoutPerson, slots);
+
+      for (final edge in edgesByPerson[person]) {
+        final otherBit = 1 << edge.otherPersonIndex;
+        if ((maskWithoutPerson & otherBit) == 0) {
+          continue;
+        }
+
+        final tail = search(maskWithoutPerson & ~otherBit, slots - 1);
+        final candidateResult = tail.withCandidate(edge.candidate);
+        if (_isBetterSelection(candidateResult, best)) {
+          best = candidateResult;
+        }
+      }
+
+      memo[key] = best;
+      return best;
+    }
+
+    final selected = search(fullMask, remainingSlots);
+    final ordered = List<_ConversationCandidate>.from(selected.candidates)
+      ..sort((left, right) => left.rank.compareTo(right.rank));
+    return ordered;
+  }
+
+  bool _isBetterSelection(
+    _CandidateSelection candidate,
+    _CandidateSelection current,
+  ) {
+    if (candidate.count != current.count) {
+      return candidate.count > current.count;
+    }
+    if (candidate.priority != current.priority) {
+      return candidate.priority > current.priority;
+    }
+    return _compareRanks(candidate.ranks, current.ranks) < 0;
+  }
+
+  int _compareRanks(List<int> left, List<int> right) {
+    final length = min(left.length, right.length);
+    for (var i = 0; i < length; i++) {
+      final comparison = left[i].compareTo(right[i]);
+      if (comparison != 0) {
+        return comparison;
+      }
+    }
+    return left.length.compareTo(right.length);
+  }
+
+  bool _hasAtLeastTwoBits(int mask) {
+    return mask != 0 && (mask & (mask - 1)) != 0;
+  }
+
+  int _lowestSetBitIndex(int mask) {
+    final lowestBit = mask & -mask;
+    return lowestBit.bitLength - 1;
+  }
+
+  bool _isPairActive(PairId pair) {
+    return _activeConversations.any(
+      (conversation) => conversation.pair == pair,
     );
   }
 
-  void _completeActiveBatch(BatchType type, List<PairId> pairs) {
-    switch (type) {
+  void _completeConversation(_ActiveConversation conversation) {
+    switch (conversation.phase) {
       case BatchType.step1:
-        for (final pair in pairs) {
-          _pairStates[pair] = PairProgress.step1Done;
-          _preferContinueStep2[pair] = _random.nextBool();
-        }
+        _pairStates[conversation.pair] = PairProgress.step1Done;
+        _preferContinueStep2[conversation.pair] = _random.nextBool();
       case BatchType.step2:
-        for (final pair in pairs) {
-          _pairStates[pair] = PairProgress.complete;
-          _preferContinueStep2.remove(pair);
-        }
+        _pairStates[conversation.pair] = PairProgress.complete;
+        _preferContinueStep2.remove(conversation.pair);
+      case BatchType.mixed:
+        throw StateError('Mixed phase cannot be an active conversation.');
     }
   }
 
   BatchType _predictNextBatchType() {
-    if (_eligibleContinueStep2Pairs().isNotEmpty) {
-      return BatchType.step2;
+    if (_activeConversations.isNotEmpty) {
+      return _executionTypeFor(
+        _activeConversations.map((conversation) => conversation.phase).toSet(),
+      );
     }
-    if (_eligibleStep1Pairs().isNotEmpty) {
+
+    final hasStep1 = _eligibleStep1Pairs().isNotEmpty;
+    final hasContinueStep2 = _eligibleContinueStep2Pairs().isNotEmpty;
+    final hasWaitingStep2 = _eligibleWaitingStep2Pairs().isNotEmpty;
+
+    if (hasStep1 && (hasContinueStep2 || hasWaitingStep2)) {
+      return BatchType.mixed;
+    }
+    if (hasStep1) {
       return BatchType.step1;
     }
-    if (_eligibleWaitingStep2Pairs().isNotEmpty) {
+    if (hasContinueStep2 || hasWaitingStep2) {
       return BatchType.step2;
     }
     return BatchType.step1;
+  }
+
+  BatchType _executionTypeFor(Set<BatchType> phases) {
+    if (phases.length == 1) {
+      return phases.first;
+    }
+    if (phases.isEmpty) {
+      return BatchType.step1;
+    }
+    return BatchType.mixed;
   }
 
   List<PairId> _eligibleStep1Pairs() {
@@ -254,9 +474,19 @@ class SimulationController {
       case BatchType.step1:
         switch (messageIndex) {
           case 0:
-            return MessageTurn(from: first, to: second, text: 'Salut');
+            return MessageTurn(
+              from: first,
+              to: second,
+              text: 'Salut',
+              phase: batchType,
+            );
           case 1:
-            return MessageTurn(from: second, to: first, text: 'Salut');
+            return MessageTurn(
+              from: second,
+              to: first,
+              text: 'Salut',
+              phase: batchType,
+            );
           default:
             throw StateError(
               'Invalid message index for salut phase: $messageIndex',
@@ -265,31 +495,110 @@ class SimulationController {
       case BatchType.step2:
         switch (messageIndex) {
           case 0:
-            return MessageTurn(from: first, to: second, text: 'Ça va ?');
+            return MessageTurn(
+              from: first,
+              to: second,
+              text: 'Ça va ?',
+              phase: batchType,
+            );
           case 1:
             return MessageTurn(
               from: second,
               to: first,
               text: 'Ça va, et toi ?',
+              phase: batchType,
             );
           case 2:
-            return MessageTurn(from: first, to: second, text: 'Ouais, ça va.');
+            return MessageTurn(
+              from: first,
+              to: second,
+              text: 'Ouais, ça va.',
+              phase: batchType,
+            );
           default:
             throw StateError(
               'Invalid message index for ça-va phase: $messageIndex',
             );
         }
+      case BatchType.mixed:
+        throw StateError('Mixed phase has no direct turn sequence.');
     }
   }
 
   int _turnCountFor(BatchType type) {
-    return type == BatchType.step1 ? 2 : 3;
+    switch (type) {
+      case BatchType.step1:
+        return 2;
+      case BatchType.step2:
+        return 3;
+      case BatchType.mixed:
+        throw StateError('Mixed phase does not have a fixed turn count.');
+    }
   }
 }
 
-class _BatchSelection {
-  const _BatchSelection({required this.type, required this.pairs});
+class _ConversationCandidate {
+  const _ConversationCandidate({
+    required this.pair,
+    required this.phase,
+    required this.priority,
+    required this.rank,
+    this.conversation,
+  });
 
-  final BatchType type;
-  final List<PairId> pairs;
+  final PairId pair;
+  final BatchType phase;
+  final int priority;
+  final int rank;
+  final _ActiveConversation? conversation;
+}
+
+class _CandidateEdge {
+  const _CandidateEdge({
+    required this.otherPersonIndex,
+    required this.candidate,
+  });
+
+  final int otherPersonIndex;
+  final _ConversationCandidate candidate;
+}
+
+class _CandidateSelection {
+  const _CandidateSelection({
+    required this.candidates,
+    required this.ranks,
+    required this.priority,
+  });
+
+  const _CandidateSelection.empty()
+    : candidates = const <_ConversationCandidate>[],
+      ranks = const <int>[],
+      priority = 0;
+
+  final List<_ConversationCandidate> candidates;
+  final List<int> ranks;
+  final int priority;
+
+  int get count => candidates.length;
+
+  _CandidateSelection withCandidate(_ConversationCandidate candidate) {
+    final nextCandidates = List<_ConversationCandidate>.from(candidates)
+      ..add(candidate);
+    final nextRanks = List<int>.from(ranks)
+      ..add(candidate.rank)
+      ..sort();
+    return _CandidateSelection(
+      candidates: nextCandidates,
+      ranks: nextRanks,
+      priority: priority + candidate.priority,
+    );
+  }
+}
+
+class _ActiveConversation {
+  _ActiveConversation({required this.pair, required this.phase});
+
+  final PairId pair;
+  final BatchType phase;
+  int nextMessageIndex = 0;
 }

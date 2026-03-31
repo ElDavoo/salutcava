@@ -1,7 +1,7 @@
 import 'dart:collection';
 import 'dart:math';
 
-enum BatchType { step1, step2 }
+enum BatchType { step1, step2, mixed }
 
 enum PairProgress { notStarted, step1Done, complete }
 
@@ -29,11 +29,17 @@ class PairId {
 }
 
 class MessageTurn {
-  const MessageTurn({required this.from, required this.to, required this.text});
+  const MessageTurn({
+    required this.from,
+    required this.to,
+    required this.text,
+    required this.phase,
+  });
 
   final int from;
   final int to;
   final String text;
+  final BatchType phase;
 
   PairId get pair => PairId(from, to);
 }

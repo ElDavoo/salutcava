@@ -23,12 +23,22 @@ class SalutCaVaApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: AppLocalizations.supportedLocales,
+      themeMode: ThemeMode.system,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF0F766E),
           brightness: Brightness.light,
         ),
         useMaterial3: true,
+        useSystemColors: true,
+      ),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF0F766E),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        useSystemColors: true,
       ),
       home: const SimulationPage(),
     );

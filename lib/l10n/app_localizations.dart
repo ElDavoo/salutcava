@@ -202,6 +202,12 @@ abstract class AppLocalizations {
   /// **'Ça va'**
   String get exchangeCaVa;
 
+  /// No description provided for @exchangeMixed.
+  ///
+  /// In en, this message translates to:
+  /// **'Mixed'**
+  String get exchangeMixed;
+
   /// No description provided for @noMessageYet.
   ///
   /// In en, this message translates to:

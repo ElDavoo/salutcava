@@ -92,20 +92,22 @@ void main() {
         for (final turn in messageStep.turns) {
           final pair = turn.pair;
 
-          if (messageStep.type == BatchType.step1) {
+          if (turn.phase == BatchType.step1) {
             expect(
               step2Counts[pair] ?? 0,
               0,
               reason: '$pair reached step2 before completing step1.',
             );
             step1Counts[pair] = (step1Counts[pair] ?? 0) + 1;
-          } else {
+          } else if (turn.phase == BatchType.step2) {
             expect(
               step1Counts[pair] ?? 0,
               2,
               reason: '$pair reached step2 before both step1 messages.',
             );
             step2Counts[pair] = (step2Counts[pair] ?? 0) + 1;
+          } else {
+            fail('Message turn phase should never be mixed.');
           }
         }
       }
@@ -139,6 +141,85 @@ void main() {
       expect(first!.pairs.length, 5);
       expect(first.turns.length, first.pairs.length);
     });
+
+    test('keeps max concurrency in random mode while enough work exists', () {
+      final controller = SimulationController(
+        config: const SimulationConfig(
+          peopleCount: 10,
+          maxConcurrent: 3,
+          schedulerMode: SchedulerMode.random,
+        ),
+        random: Random(42),
+      );
+
+      for (var i = 0; i < 20; i++) {
+        final wave = controller.advance();
+        expect(wave, isNotNull);
+        expect(
+          wave!.turns.length,
+          3,
+          reason: 'Concurrency should stay full while plenty of work remains.',
+        );
+      }
+    });
+
+    test('avoids early underfill in 6-person random mode across seeds', () {
+      for (var seed = 0; seed < 50; seed++) {
+        final controller = SimulationController(
+          config: const SimulationConfig(
+            peopleCount: 6,
+            maxConcurrent: 3,
+            schedulerMode: SchedulerMode.random,
+          ),
+          random: Random(seed),
+        );
+
+        for (var waveIndex = 0; waveIndex < 15; waveIndex++) {
+          final wave = controller.advance();
+          expect(wave, isNotNull, reason: 'Seed $seed ended too early.');
+          expect(
+            wave!.turns.length,
+            3,
+            reason:
+                'Seed $seed dipped below max concurrency before endgame at wave $waveIndex.',
+          );
+        }
+      }
+    });
+
+    test('uses all mathematically available slots each wave', () {
+      for (var seed = 0; seed < 20; seed++) {
+        final controller = SimulationController(
+          config: const SimulationConfig(
+            peopleCount: 6,
+            maxConcurrent: 3,
+            schedulerMode: SchedulerMode.random,
+          ),
+          random: Random(seed),
+        );
+
+        while (true) {
+          final remainingPairs = controller.snapshot.pairStates.entries
+              .where((entry) => entry.value != PairProgress.complete)
+              .map((entry) => entry.key)
+              .toList(growable: false);
+          final theoretical = _maxNonOverlappingPairs(remainingPairs, 3);
+
+          final wave = controller.advance();
+          if (wave == null) {
+            expect(theoretical, 0, reason: 'Simulation ended with work left.');
+            break;
+          }
+
+          expect(
+            wave.turns.length,
+            theoretical,
+            reason:
+                'Seed $seed scheduled fewer conversations than theoretically possible.',
+          );
+        }
+      }
+    });
   });
 }
 
@@ -161,4 +242,33 @@ class _TestClock {
     _current = _current.add(const Duration(milliseconds: 300));
     return now;
   }
+}
+
+int _maxNonOverlappingPairs(List<PairId> pairs, int maxConcurrent) {
+  var best = 0;
+
+  void search(int index, Set<int> busy, int count) {
+    if (count > best) {
+      best = count;
+    }
+    if (count >= maxConcurrent) {
+      return;
+    }
+
+    for (var i = index; i < pairs.length; i++) {
+      final pair = pairs[i];
+      if (busy.contains(pair.first) || busy.contains(pair.second)) {
+        continue;
+      }
+
+      busy.add(pair.first);
+      busy.add(pair.second);
+      search(i + 1, busy, count + 1);
+      busy.remove(pair.first);
+      busy.remove(pair.second);
+    }
+  }
+
+  search(0, <int>{}, 0);
+  return best;
 }

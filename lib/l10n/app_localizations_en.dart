@@ -73,6 +73,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get exchangeCaVa => 'Ça va';
 
   @override
+  String get exchangeMixed => 'Mixed';
+
+  @override
   String get noMessageYet => 'No message yet. Tap the arena to start.';
 
   @override

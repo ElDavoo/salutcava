@@ -74,6 +74,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get exchangeCaVa => 'Ça va';
 
   @override
+  String get exchangeMixed => 'Mixte';
+
+  @override
   String get noMessageYet => 'Aucun message. Touchez la zone pour commencer.';
 
   @override
