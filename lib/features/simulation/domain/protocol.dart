@@ -7,9 +7,9 @@ extension BatchTypeLabel on BatchType {
   String get label {
     switch (this) {
       case BatchType.step1:
-        return 'Step 1';
+        return 'Salut';
       case BatchType.step2:
-        return 'Step 2';
+        return 'Ça va';
     }
   }
 }

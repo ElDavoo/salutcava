@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:salutcava/features/simulation/domain/protocol.dart';
 import 'package:salutcava/features/simulation/domain/scheduler.dart';
@@ -32,6 +34,7 @@ void main() {
           maxConcurrent: 4,
           schedulerMode: SchedulerMode.deterministic,
         ),
+        random: Random(1),
       );
 
       while (!controller.snapshot.isComplete) {
@@ -42,8 +45,13 @@ void main() {
 
         expect(
           messageStep.turns,
-          hasLength(1),
-          reason: 'Each tap should advance exactly one message.',
+          hasLength(messageStep.pairs.length),
+          reason: 'Each tap should emit one message per active conversation.',
+        );
+        expect(
+          messageStep.turns.length,
+          lessThanOrEqualTo(4),
+          reason: 'Messages per tap should never exceed max concurrent value.',
         );
 
         final busy = <int>{};
@@ -69,6 +77,7 @@ void main() {
           maxConcurrent: 3,
           schedulerMode: SchedulerMode.deterministic,
         ),
+        random: Random(7),
       );
 
       final step1Counts = <PairId, int>{};
@@ -80,23 +89,24 @@ void main() {
           break;
         }
 
-        final turn = messageStep.turns.single;
-        final pair = turn.pair;
+        for (final turn in messageStep.turns) {
+          final pair = turn.pair;
 
-        if (messageStep.type == BatchType.step1) {
-          expect(
-            step2Counts[pair] ?? 0,
-            0,
-            reason: '$pair reached step2 before completing step1.',
-          );
-          step1Counts[pair] = (step1Counts[pair] ?? 0) + 1;
-        } else {
-          expect(
-            step1Counts[pair] ?? 0,
-            2,
-            reason: '$pair reached step2 before both step1 messages.',
-          );
-          step2Counts[pair] = (step2Counts[pair] ?? 0) + 1;
+          if (messageStep.type == BatchType.step1) {
+            expect(
+              step2Counts[pair] ?? 0,
+              0,
+              reason: '$pair reached step2 before completing step1.',
+            );
+            step1Counts[pair] = (step1Counts[pair] ?? 0) + 1;
+          } else {
+            expect(
+              step1Counts[pair] ?? 0,
+              2,
+              reason: '$pair reached step2 before both step1 messages.',
+            );
+            step2Counts[pair] = (step2Counts[pair] ?? 0) + 1;
+          }
         }
       }
 
@@ -112,6 +122,22 @@ void main() {
           reason: '$pair should receive exactly three step2 messages.',
         );
       }
+    });
+
+    test('first advance can emit multiple messages with concurrency', () {
+      final controller = SimulationController(
+        config: const SimulationConfig(
+          peopleCount: 10,
+          maxConcurrent: 5,
+          schedulerMode: SchedulerMode.deterministic,
+        ),
+        random: Random(3),
+      );
+
+      final first = controller.advance();
+      expect(first, isNotNull);
+      expect(first!.pairs.length, 5);
+      expect(first.turns.length, first.pairs.length);
     });
   });
 }

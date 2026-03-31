@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:salutcava/features/simulation/presentation/simulation_page.dart';
+import 'package:salutcava/l10n/app_localizations.dart';
 import 'package:salutcava/main.dart';
 
 void main() {
@@ -8,13 +10,22 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const SalutCaVaApp());
+    await tester.pumpAndSettle();
 
-    expect(find.text('Turns: 0'), findsOneWidget);
+    final turnCountFinder = find.byKey(const Key('turn-count'));
+    expect(turnCountFinder, findsOneWidget);
+    final beforeCount = _readCountFromText(
+      (tester.widget<Text>(turnCountFinder)).data!,
+    );
+    expect(beforeCount, 0);
 
     await tester.tap(find.byKey(const Key('simulation-arena')));
     await tester.pump();
 
-    expect(find.text('Turns: 1'), findsOneWidget);
+    final afterCount = _readCountFromText(
+      (tester.widget<Text>(turnCountFinder)).data!,
+    );
+    expect(afterCount, greaterThan(0));
   });
 
   testWidgets('small simulation reaches completion', (
@@ -22,9 +33,18 @@ void main() {
   ) async {
     await tester.pumpWidget(
       const MaterialApp(
+        locale: Locale('fr'),
+        localizationsDelegates: [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
         home: SimulationPage(initialPeopleCount: 2, initialMaxConcurrent: 1),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('completion-banner')), findsNothing);
 
@@ -34,6 +54,32 @@ void main() {
     }
 
     expect(find.byKey(const Key('completion-banner')), findsOneWidget);
-    expect(find.textContaining('Everyone greeted everyone'), findsOneWidget);
   });
+
+  testWidgets('italian localization is rendered', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        locale: Locale('it'),
+        localizationsDelegates: [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: SimulationPage(initialPeopleCount: 2, initialMaxConcurrent: 1),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reimposta'), findsOneWidget);
+  });
+}
+
+int _readCountFromText(String text) {
+  final match = RegExp(r'(\d+)').firstMatch(text);
+  if (match == null) {
+    throw StateError('No numeric value found in "$text"');
+  }
+  return int.parse(match.group(1)!);
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../domain/protocol.dart';
 import '../domain/scheduler.dart';
 import '../domain/simulation_controller.dart';
+import '../../../l10n/app_localizations.dart';
 import 'circle_conversation_painter.dart';
 
 class SimulationPage extends StatefulWidget {
@@ -81,9 +82,10 @@ class _SimulationPageState extends State<SimulationPage> {
   Widget build(BuildContext context) {
     final snapshot = _controller.snapshot;
     final theme = Theme.of(context);
+    final strings = AppLocalizations.of(context)!;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Salut, ca va? Simulator')),
+      appBar: AppBar(title: Text(strings.appTitle)),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -95,7 +97,7 @@ class _SimulationPageState extends State<SimulationPage> {
                 padding: const EdgeInsets.all(12),
                 child: Column(
                   children: [
-                    _buildControls(theme),
+                    _buildControls(theme, strings),
                     const SizedBox(height: 10),
                     SizedBox(
                       height: arenaHeight,
@@ -144,8 +146,8 @@ class _SimulationPageState extends State<SimulationPage> {
                                       padding: const EdgeInsets.all(10),
                                       child: Text(
                                         snapshot.isComplete
-                                            ? 'Conversation complete. Reset to run again.'
-                                            : 'Tap anywhere in this area to advance one message.',
+                                            ? strings.arenaCompletedHint
+                                            : strings.arenaTapHint,
                                         textAlign: TextAlign.center,
                                         style: theme.textTheme.bodyMedium,
                                       ),
@@ -159,15 +161,15 @@ class _SimulationPageState extends State<SimulationPage> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    _buildMetrics(theme, snapshot),
+                    _buildMetrics(theme, snapshot, strings),
                     const SizedBox(height: 10),
                     SizedBox(
                       height: messageHeight,
-                      child: _buildLastMessage(theme, snapshot),
+                      child: _buildLastMessage(theme, snapshot, strings),
                     ),
                     if (snapshot.isComplete) ...[
                       const SizedBox(height: 10),
-                      _buildCompletionBanner(theme, snapshot),
+                      _buildCompletionBanner(theme, snapshot, strings),
                     ],
                   ],
                 ),
@@ -179,16 +181,16 @@ class _SimulationPageState extends State<SimulationPage> {
     );
   }
 
-  Widget _buildControls(ThemeData theme) {
+  Widget _buildControls(ThemeData theme, AppLocalizations strings) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Configuration', style: theme.textTheme.titleMedium),
+            Text(strings.configuration, style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
-            Text('People in circle: $_peopleCount (2-20)'),
+            Text(strings.peopleInCircle(_peopleCount)),
             Slider(
               min: 2,
               max: 20,
@@ -202,7 +204,7 @@ class _SimulationPageState extends State<SimulationPage> {
               },
               onChangeEnd: (_) => _applyConfig(),
             ),
-            Text('Concurrent conversations: $_maxConcurrent (1-5)'),
+            Text(strings.concurrentConversations(_maxConcurrent)),
             Slider(
               min: 1,
               max: 5,
@@ -220,8 +222,8 @@ class _SimulationPageState extends State<SimulationPage> {
               children: [
                 Expanded(
                   child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: 'Scheduling mode',
+                    decoration: InputDecoration(
+                      labelText: strings.schedulingMode,
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -233,7 +235,7 @@ class _SimulationPageState extends State<SimulationPage> {
                             .map(
                               (mode) => DropdownMenuItem<SchedulerMode>(
                                 value: mode,
-                                child: Text(mode.label),
+                                child: Text(_schedulerModeLabel(strings, mode)),
                               ),
                             )
                             .toList(growable: false),
@@ -251,7 +253,7 @@ class _SimulationPageState extends State<SimulationPage> {
                 const SizedBox(width: 10),
                 FilledButton.tonal(
                   onPressed: _resetSimulation,
-                  child: const Text('Reset'),
+                  child: Text(strings.reset),
                 ),
               ],
             ),
@@ -261,7 +263,11 @@ class _SimulationPageState extends State<SimulationPage> {
     );
   }
 
-  Widget _buildMetrics(ThemeData theme, SimulationSnapshot snapshot) {
+  Widget _buildMetrics(
+    ThemeData theme,
+    SimulationSnapshot snapshot,
+    AppLocalizations strings,
+  ) {
     final elapsed = _formatDuration(snapshot.elapsed);
 
     return Card(
@@ -272,19 +278,24 @@ class _SimulationPageState extends State<SimulationPage> {
           runSpacing: 8,
           children: [
             Text(
-              'Turns: ${snapshot.totalTurns}',
+              strings.turnsLabel(snapshot.totalTurns),
               key: const Key('turn-count'),
               style: theme.textTheme.titleSmall,
             ),
             Text(
-              'Pairs: ${snapshot.completedPairs}/${snapshot.totalPairs}',
+              strings.pairsLabel(snapshot.completedPairs, snapshot.totalPairs),
               style: theme.textTheme.titleSmall,
             ),
-            Text('Elapsed: $elapsed', style: theme.textTheme.titleSmall),
+            Text(
+              strings.elapsedLabel(elapsed),
+              style: theme.textTheme.titleSmall,
+            ),
             Text(
               snapshot.isComplete
-                  ? 'Status: Complete'
-                  : 'Next: ${snapshot.nextBatchType.label}',
+                  ? strings.statusCompleteLabel
+                  : strings.nextLabel(
+                      _exchangeLabel(strings, snapshot.nextBatchType),
+                    ),
               style: theme.textTheme.titleSmall,
             ),
           ],
@@ -293,7 +304,11 @@ class _SimulationPageState extends State<SimulationPage> {
     );
   }
 
-  Widget _buildLastMessage(ThemeData theme, SimulationSnapshot snapshot) {
+  Widget _buildLastMessage(
+    ThemeData theme,
+    SimulationSnapshot snapshot,
+    AppLocalizations strings,
+  ) {
     final lastStep = snapshot.lastBatch;
 
     return Card(
@@ -302,7 +317,7 @@ class _SimulationPageState extends State<SimulationPage> {
         child: lastStep == null
             ? Center(
                 child: Text(
-                  'No message yet. Tap the arena to start Step 1.',
+                  strings.noMessageYet,
                   style: theme.textTheme.bodyMedium,
                 ),
               )
@@ -310,8 +325,10 @@ class _SimulationPageState extends State<SimulationPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${lastStep.type.label} message '
-                    '(batch with ${lastStep.pairs.length} pair(s))',
+                    strings.lastMessageHeader(
+                      _exchangeLabel(strings, lastStep.type),
+                      lastStep.pairs.length,
+                    ),
                     style: theme.textTheme.titleSmall,
                   ),
                   const SizedBox(height: 6),
@@ -333,15 +350,21 @@ class _SimulationPageState extends State<SimulationPage> {
     );
   }
 
-  Widget _buildCompletionBanner(ThemeData theme, SimulationSnapshot snapshot) {
+  Widget _buildCompletionBanner(
+    ThemeData theme,
+    SimulationSnapshot snapshot,
+    AppLocalizations strings,
+  ) {
     return Card(
       key: const Key('completion-banner'),
       color: theme.colorScheme.secondaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Text(
-          'Everyone greeted everyone in ${snapshot.totalTurns} turns '
-          'over ${_formatDuration(snapshot.elapsed)}.',
+          strings.completionBanner(
+            snapshot.totalTurns,
+            _formatDuration(snapshot.elapsed),
+          ),
           style: theme.textTheme.titleSmall?.copyWith(
             color: theme.colorScheme.onSecondaryContainer,
           ),
@@ -361,5 +384,23 @@ class _SimulationPageState extends State<SimulationPage> {
         .toString()
         .padLeft(2, '0');
     return '$minutes:$seconds.$centiseconds';
+  }
+
+  String _exchangeLabel(AppLocalizations strings, BatchType type) {
+    switch (type) {
+      case BatchType.step1:
+        return strings.exchangeSalut;
+      case BatchType.step2:
+        return strings.exchangeCaVa;
+    }
+  }
+
+  String _schedulerModeLabel(AppLocalizations strings, SchedulerMode mode) {
+    switch (mode) {
+      case SchedulerMode.deterministic:
+        return strings.schedulerModeDeterministic;
+      case SchedulerMode.random:
+        return strings.schedulerModeRandom;
+    }
   }
 }

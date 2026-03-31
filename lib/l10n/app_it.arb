@@ -1,0 +1,88 @@
+{
+  "@@locale": "it",
+  "appTitle": "Salut, ça va ?",
+  "configuration": "Configurazione",
+  "peopleInCircle": "Persone nel cerchio: {count} (2-20)",
+  "@peopleInCircle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "concurrentConversations": "Conversazioni simultanee: {count} (1-5)",
+  "@concurrentConversations": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "schedulingMode": "Modalità di pianificazione",
+  "schedulerModeDeterministic": "Deterministico",
+  "schedulerModeRandom": "Casuale",
+  "reset": "Reimposta",
+  "arenaCompletedHint": "Conversazione completata. Reimposta per ricominciare.",
+  "arenaTapHint": "Tocca quest'area per avanzare di un turno di messaggi.",
+  "turnsLabel": "Turni: {turns}",
+  "@turnsLabel": {
+    "placeholders": {
+      "turns": {
+        "type": "int"
+      }
+    }
+  },
+  "pairsLabel": "Coppie: {completed}/{total}",
+  "@pairsLabel": {
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "elapsedLabel": "Tempo trascorso: {elapsed}",
+  "@elapsedLabel": {
+    "placeholders": {
+      "elapsed": {
+        "type": "String"
+      }
+    }
+  },
+  "statusCompleteLabel": "Stato: completato",
+  "nextLabel": "Prossimo scambio: {exchange}",
+  "@nextLabel": {
+    "placeholders": {
+      "exchange": {
+        "type": "String"
+      }
+    }
+  },
+  "exchangeSalut": "Salut",
+  "exchangeCaVa": "Ça va",
+  "noMessageYet": "Nessun messaggio. Tocca l'area per iniziare.",
+  "lastMessageHeader": "{exchange} ({pairCount, plural, =1{# conversazione} other{# conversazioni}})",
+  "@lastMessageHeader": {
+    "placeholders": {
+      "exchange": {
+        "type": "String"
+      },
+      "pairCount": {
+        "type": "int"
+      }
+    }
+  },
+  "completionBanner": "Tutti si sono salutati in {turns} turni in {elapsed}.",
+  "@completionBanner": {
+    "placeholders": {
+      "turns": {
+        "type": "int"
+      },
+      "elapsed": {
+        "type": "String"
+      }
+    }
+  }
+}

@@ -28,21 +28,25 @@ class SimulationController {
     Random? random,
   }) : _config = config,
        _clock = clock ?? DateTime.now,
-       _scheduler =
-           scheduler ?? buildScheduler(config.schedulerMode, random: random) {
+       _random = random ?? Random(),
+       _scheduler = scheduler ?? const DeterministicPairScheduler() {
+    if (scheduler == null) {
+      _scheduler = buildScheduler(config.schedulerMode, random: _random);
+    }
     _initialize();
   }
 
   SimulationConfig _config;
   final Clock _clock;
+  Random _random;
   PairScheduler _scheduler;
 
   late Map<PairId, PairProgress> _pairStates;
   final List<BatchExecution> _history = <BatchExecution>[];
-  List<_QueuedTurn> _pendingTurns = <_QueuedTurn>[];
+  final Map<PairId, bool> _preferContinueStep2 = <PairId, bool>{};
   BatchType? _activeBatchType;
   List<PairId> _activeBatchPairs = const <PairId>[];
-  BatchType _nextBatchType = BatchType.step1;
+  int _activeMessageIndex = 0;
   int _totalTurns = 0;
   DateTime? _startedAt;
   DateTime? _finishedAt;
@@ -53,12 +57,18 @@ class SimulationController {
 
   void updateConfig(SimulationConfig newConfig, {Random? random}) {
     _config = newConfig;
-    _scheduler = buildScheduler(newConfig.schedulerMode, random: random);
+    if (random != null) {
+      _random = random;
+    }
+    _scheduler = buildScheduler(newConfig.schedulerMode, random: _random);
     _initialize();
   }
 
   void restart({Random? random}) {
-    _scheduler = buildScheduler(_config.schedulerMode, random: random);
+    if (random != null) {
+      _random = random;
+    }
+    _scheduler = buildScheduler(_config.schedulerMode, random: _random);
     _initialize();
   }
 
@@ -69,53 +79,38 @@ class SimulationController {
 
     _startedAt ??= _clock();
 
-    if (_pendingTurns.isEmpty) {
-      var batchType = _nextBatchType;
-      var eligible = _eligiblePairs(batchType);
-
-      if (eligible.isEmpty) {
-        batchType = _toggleBatchType(batchType);
-        eligible = _eligiblePairs(batchType);
-      }
-
-      if (eligible.isEmpty) {
+    if (_activeBatchType == null || _activeBatchPairs.isEmpty) {
+      final nextBatch = _selectNextBatch();
+      if (nextBatch == null) {
         _finishedAt = _clock();
         _snapshot = _buildSnapshot();
         return null;
       }
 
-      final selected = _scheduler.selectPairs(
-        candidates: eligible,
-        maxConcurrent: _config.maxConcurrent,
-      );
-      final pairsToRun = selected.isEmpty ? <PairId>[eligible.first] : selected;
-
-      _activeBatchType = batchType;
-      _activeBatchPairs = List<PairId>.unmodifiable(pairsToRun);
-      _pendingTurns = _buildPendingTurns(pairsToRun, batchType);
-      _nextBatchType = _toggleBatchType(batchType);
+      _activeBatchType = nextBatch.type;
+      _activeBatchPairs = nextBatch.pairs;
+      _activeMessageIndex = 0;
     }
 
-    final queuedTurn = _pendingTurns.removeAt(0);
     final activeBatchType = _activeBatchType!;
+    final turns = _activeBatchPairs
+        .map((pair) => _turnForPair(pair, activeBatchType, _activeMessageIndex))
+        .toList(growable: false);
 
-    if (queuedTurn.completesPair) {
-      _pairStates[queuedTurn.pair] = activeBatchType == BatchType.step1
-          ? PairProgress.step1Done
-          : PairProgress.complete;
-    }
-
-    _totalTurns++;
+    _totalTurns += turns.length;
     final execution = BatchExecution(
       type: activeBatchType,
       pairs: _activeBatchPairs,
-      turns: <MessageTurn>[queuedTurn.turn],
+      turns: turns,
     );
     _history.add(execution);
 
-    if (_pendingTurns.isEmpty) {
+    _activeMessageIndex++;
+    if (_activeMessageIndex >= _turnCountFor(activeBatchType)) {
+      _completeActiveBatch(activeBatchType, _activeBatchPairs);
       _activeBatchType = null;
       _activeBatchPairs = const <PairId>[];
+      _activeMessageIndex = 0;
 
       if (_pairStates.values.every((state) => state == PairProgress.complete)) {
         _finishedAt = _clock();
@@ -133,10 +128,10 @@ class SimulationController {
           PairId(left, right): PairProgress.notStarted,
     };
     _history.clear();
-    _pendingTurns = <_QueuedTurn>[];
+    _preferContinueStep2.clear();
     _activeBatchType = null;
     _activeBatchPairs = const <PairId>[];
-    _nextBatchType = BatchType.step1;
+    _activeMessageIndex = 0;
     _totalTurns = 0;
     _startedAt = null;
     _finishedAt = null;
@@ -144,7 +139,7 @@ class SimulationController {
   }
 
   SimulationSnapshot _buildSnapshot({BatchExecution? lastBatch}) {
-    final displayBatchType = _activeBatchType ?? _nextBatchType;
+    final displayBatchType = _activeBatchType ?? _predictNextBatchType();
     final elapsed = _startedAt == null
         ? null
         : (_finishedAt ?? _clock()).difference(_startedAt!);
@@ -163,79 +158,138 @@ class SimulationController {
     );
   }
 
-  List<PairId> _eligiblePairs(BatchType batchType) {
-    switch (batchType) {
+  _BatchSelection? _selectNextBatch() {
+    final continueStep2Pairs = _eligibleContinueStep2Pairs();
+    if (continueStep2Pairs.isNotEmpty) {
+      return _buildSelection(BatchType.step2, continueStep2Pairs);
+    }
+
+    final step1Pairs = _eligibleStep1Pairs();
+    if (step1Pairs.isNotEmpty) {
+      return _buildSelection(BatchType.step1, step1Pairs);
+    }
+
+    final delayedStep2Pairs = _eligibleWaitingStep2Pairs();
+    if (delayedStep2Pairs.isNotEmpty) {
+      return _buildSelection(BatchType.step2, delayedStep2Pairs);
+    }
+
+    return null;
+  }
+
+  _BatchSelection _buildSelection(BatchType type, List<PairId> candidates) {
+    final selected = _scheduler.selectPairs(
+      candidates: candidates,
+      maxConcurrent: _config.maxConcurrent,
+    );
+    final pairsToRun = selected.isEmpty ? <PairId>[candidates.first] : selected;
+    return _BatchSelection(
+      type: type,
+      pairs: List<PairId>.unmodifiable(pairsToRun),
+    );
+  }
+
+  void _completeActiveBatch(BatchType type, List<PairId> pairs) {
+    switch (type) {
       case BatchType.step1:
-        return _pairStates.entries
-            .where((entry) => entry.value == PairProgress.notStarted)
-            .map((entry) => entry.key)
-            .toList();
+        for (final pair in pairs) {
+          _pairStates[pair] = PairProgress.step1Done;
+          _preferContinueStep2[pair] = _random.nextBool();
+        }
       case BatchType.step2:
-        return _pairStates.entries
-            .where((entry) => entry.value == PairProgress.step1Done)
-            .map((entry) => entry.key)
-            .toList();
+        for (final pair in pairs) {
+          _pairStates[pair] = PairProgress.complete;
+          _preferContinueStep2.remove(pair);
+        }
     }
   }
 
-  static BatchType _toggleBatchType(BatchType batchType) {
-    return batchType == BatchType.step1 ? BatchType.step2 : BatchType.step1;
-  }
-
-  List<_QueuedTurn> _buildPendingTurns(
-    List<PairId> pairs,
-    BatchType batchType,
-  ) {
-    final perPairTurns = <PairId, List<MessageTurn>>{
-      for (final pair in pairs) pair: _turnsForPair(pair, batchType),
-    };
-
-    final queue = <_QueuedTurn>[];
-    final turnsPerPair = perPairTurns[pairs.first]!.length;
-    for (var turnIndex = 0; turnIndex < turnsPerPair; turnIndex++) {
-      for (final pair in pairs) {
-        final pairTurns = perPairTurns[pair]!;
-        queue.add(
-          _QueuedTurn(
-            pair: pair,
-            turn: pairTurns[turnIndex],
-            completesPair: turnIndex == pairTurns.length - 1,
-          ),
-        );
-      }
+  BatchType _predictNextBatchType() {
+    if (_eligibleContinueStep2Pairs().isNotEmpty) {
+      return BatchType.step2;
     }
-
-    return queue;
+    if (_eligibleStep1Pairs().isNotEmpty) {
+      return BatchType.step1;
+    }
+    if (_eligibleWaitingStep2Pairs().isNotEmpty) {
+      return BatchType.step2;
+    }
+    return BatchType.step1;
   }
 
-  List<MessageTurn> _turnsForPair(PairId pair, BatchType batchType) {
+  List<PairId> _eligibleStep1Pairs() {
+    return _pairStates.entries
+        .where((entry) => entry.value == PairProgress.notStarted)
+        .map((entry) => entry.key)
+        .toList(growable: false);
+  }
+
+  List<PairId> _eligibleContinueStep2Pairs() {
+    return _pairStates.entries
+        .where(
+          (entry) =>
+              entry.value == PairProgress.step1Done &&
+              (_preferContinueStep2[entry.key] ?? false),
+        )
+        .map((entry) => entry.key)
+        .toList(growable: false);
+  }
+
+  List<PairId> _eligibleWaitingStep2Pairs() {
+    return _pairStates.entries
+        .where(
+          (entry) =>
+              entry.value == PairProgress.step1Done &&
+              !(_preferContinueStep2[entry.key] ?? false),
+        )
+        .map((entry) => entry.key)
+        .toList(growable: false);
+  }
+
+  MessageTurn _turnForPair(PairId pair, BatchType batchType, int messageIndex) {
     final first = pair.first;
     final second = pair.second;
 
     switch (batchType) {
       case BatchType.step1:
-        return <MessageTurn>[
-          MessageTurn(from: first, to: second, text: 'Salut'),
-          MessageTurn(from: second, to: first, text: 'Salut'),
-        ];
+        switch (messageIndex) {
+          case 0:
+            return MessageTurn(from: first, to: second, text: 'Salut');
+          case 1:
+            return MessageTurn(from: second, to: first, text: 'Salut');
+          default:
+            throw StateError(
+              'Invalid message index for salut phase: $messageIndex',
+            );
+        }
       case BatchType.step2:
-        return <MessageTurn>[
-          MessageTurn(from: first, to: second, text: 'Ca va?'),
-          MessageTurn(from: second, to: first, text: 'Ca va, et toi?'),
-          MessageTurn(from: first, to: second, text: 'Ouais, ca va.'),
-        ];
+        switch (messageIndex) {
+          case 0:
+            return MessageTurn(from: first, to: second, text: 'Ça va ?');
+          case 1:
+            return MessageTurn(
+              from: second,
+              to: first,
+              text: 'Ça va, et toi ?',
+            );
+          case 2:
+            return MessageTurn(from: first, to: second, text: 'Ouais, ça va.');
+          default:
+            throw StateError(
+              'Invalid message index for ça-va phase: $messageIndex',
+            );
+        }
     }
+  }
+
+  int _turnCountFor(BatchType type) {
+    return type == BatchType.step1 ? 2 : 3;
   }
 }
 
-class _QueuedTurn {
-  const _QueuedTurn({
-    required this.pair,
-    required this.turn,
-    required this.completesPair,
-  });
+class _BatchSelection {
+  const _BatchSelection({required this.type, required this.pairs});
 
-  final PairId pair;
-  final MessageTurn turn;
-  final bool completesPair;
+  final BatchType type;
+  final List<PairId> pairs;
 }

@@ -1,4 +1,4 @@
-# Salut, ca va?
+# Salut, ça va ?
 
 Flutter simulator for the 2-step French greeting protocol in multi-person
 conversations.

@@ -1,0 +1,88 @@
+{
+  "@@locale": "en",
+  "appTitle": "Salut, ça va ?",
+  "configuration": "Configuration",
+  "peopleInCircle": "People in circle: {count} (2-20)",
+  "@peopleInCircle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "concurrentConversations": "Concurrent conversations: {count} (1-5)",
+  "@concurrentConversations": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "schedulingMode": "Scheduling mode",
+  "schedulerModeDeterministic": "Deterministic",
+  "schedulerModeRandom": "Random",
+  "reset": "Reset",
+  "arenaCompletedHint": "Conversation complete. Reset to run again.",
+  "arenaTapHint": "Tap anywhere in this area to advance one message wave.",
+  "turnsLabel": "Turns: {turns}",
+  "@turnsLabel": {
+    "placeholders": {
+      "turns": {
+        "type": "int"
+      }
+    }
+  },
+  "pairsLabel": "Pairs: {completed}/{total}",
+  "@pairsLabel": {
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "elapsedLabel": "Elapsed: {elapsed}",
+  "@elapsedLabel": {
+    "placeholders": {
+      "elapsed": {
+        "type": "String"
+      }
+    }
+  },
+  "statusCompleteLabel": "Status: Complete",
+  "nextLabel": "Next exchange: {exchange}",
+  "@nextLabel": {
+    "placeholders": {
+      "exchange": {
+        "type": "String"
+      }
+    }
+  },
+  "exchangeSalut": "Salut",
+  "exchangeCaVa": "Ça va",
+  "noMessageYet": "No message yet. Tap the arena to start.",
+  "lastMessageHeader": "{exchange} ({pairCount, plural, =1{# conversation} other{# conversations}})",
+  "@lastMessageHeader": {
+    "placeholders": {
+      "exchange": {
+        "type": "String"
+      },
+      "pairCount": {
+        "type": "int"
+      }
+    }
+  },
+  "completionBanner": "Everyone greeted everyone in {turns} turns over {elapsed}.",
+  "@completionBanner": {
+    "placeholders": {
+      "turns": {
+        "type": "int"
+      },
+      "elapsed": {
+        "type": "String"
+      }
+    }
+  }
+}
