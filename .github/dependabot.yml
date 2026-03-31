@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: "pub"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    commit-message:
+      prefix: "deps(pub)"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 10
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:15"
+      timezone: "UTC"
+    commit-message:
+      prefix: "deps(actions)"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 10

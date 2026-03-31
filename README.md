@@ -40,3 +40,11 @@ flutter run
 flutter analyze
 flutter test
 ```
+
+## GitHub Automation
+
+- CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+	It verifies formatting, runs analysis/tests, and builds an arm64-v8a release
+	APK artifact on push/PR.
+- Dependabot: [`.github/dependabot.yml`](.github/dependabot.yml)
+	It opens weekly update PRs for `pub` dependencies and GitHub Actions.

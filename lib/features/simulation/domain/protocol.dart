@@ -3,17 +3,6 @@ import 'dart:math';
 
 enum BatchType { step1, step2 }
 
-extension BatchTypeLabel on BatchType {
-  String get label {
-    switch (this) {
-      case BatchType.step1:
-        return 'Salut';
-      case BatchType.step2:
-        return 'Ça va';
-    }
-  }
-}
-
 enum PairProgress { notStarted, step1Done, complete }
 
 class PairId {

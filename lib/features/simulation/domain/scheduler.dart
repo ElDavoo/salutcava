@@ -4,17 +4,6 @@ import 'protocol.dart';
 
 enum SchedulerMode { deterministic, random }
 
-extension SchedulerModeLabel on SchedulerMode {
-  String get label {
-    switch (this) {
-      case SchedulerMode.deterministic:
-        return 'Deterministic';
-      case SchedulerMode.random:
-        return 'Random';
-    }
-  }
-}
-
 abstract class PairScheduler {
   List<PairId> selectPairs({
     required List<PairId> candidates,
