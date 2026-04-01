@@ -3,6 +3,23 @@
 Flutter simulator for the 2-step French greeting protocol in multi-person
 conversations.
 
+![App screenshot](screenshot.png)
+
+## What?
+
+In France, people greet each other with two conversation turns that look like a TCP handshake:
+
+    Person A: "Salut"
+    Person B: "Salut, ca va?"
+    Person A: "Ca va, et toi?"
+    Person B: "Ouais, ca va."
+
+Only after this exchange can the conversation proceed to other topics. Additionally, in a multi-person conversation, each person must greet every other person before the conversation can proceed.
+
+### 2-step protocol variant
+
+To not lock a pair of people for too much, since they might be busy discussing with someone or anything, a variation of the protocol is often used, which is less efficient but divided into two different batches, that can be interrupted.
+
 ## Features
 
 - Configurable people count from 2 to 20.
@@ -48,3 +65,7 @@ flutter test
 	APK artifact on push/PR.
 - Dependabot: [`.github/dependabot.yml`](.github/dependabot.yml)
 	It opens weekly update PRs for `pub` dependencies and GitHub Actions.
+
+## Initial prompt
+
+See initial_prompt.md for the original prompt that led to this project.  
