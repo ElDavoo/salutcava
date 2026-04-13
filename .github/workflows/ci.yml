@@ -145,7 +145,7 @@ jobs:
         run: flutter build apk --release --split-per-abi
 
       - name: Create GitHub release and upload APKs
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
